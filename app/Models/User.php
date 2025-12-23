@@ -4,6 +4,8 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
@@ -20,7 +22,9 @@ class User extends Authenticatable
     protected $fillable = [
         'name',
         'email',
+        'cpf',
         'password',
+        'balance',
     ];
 
     /**
@@ -44,5 +48,41 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+
+    protected $casts = [
+        'balance' => 'decimal:2',
+    ];
+
+    // Um usuário tem uma carteira
+    public function wallet(): HasOne
+    {
+        return $this->hasOne(Wallet::class, 'owner_id')->where('owner_type', User::class);
+    }
+
+    // Um usuário pode fazer várias transferências (como pagador)
+    public function sentTransactions(): HasMany
+    {
+        return $this->hasMany(Transaction::class, 'payer_id');
+    }
+
+    // Um usuário pode receber várias transferências (como recebedor)
+    public function receivedTransactions(): HasMany
+    {
+        return $this->hasManyThrough(
+            Transaction::class,
+            User::class,
+            'id',
+            'payee_id',
+            'id',
+            'id'
+        )->where('payee_type', User::class);
+    }
+
+    // Verificar se tem saldo suficiente
+    public function hasSufficientBalance(float $amount): bool
+    {
+        return $this->balance >= $amount;
     }
 }

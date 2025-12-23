@@ -18,6 +18,8 @@ return new class extends Migration
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
             $table->rememberToken();
+            $table->string('cpf')->unique();
+            $table->decimal('balance', 15, 2)->default(0);
             $table->timestamps();
         });
 
