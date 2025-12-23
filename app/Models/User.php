@@ -2,64 +2,37 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
 class User extends Authenticatable
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var list<string>
-     */
+    const TYPE_COMMON = 'common';
+    const TYPE_MERCHANT = 'merchant';
+
     protected $fillable = [
         'name',
         'email',
-        'cpf',
+        'document', // CPF ou CNPJ
         'password',
+        'type',
         'balance',
     ];
 
-    /**
-     * The attributes that should be hidden for serialization.
-     *
-     * @var list<string>
-     */
     protected $hidden = [
         'password',
         'remember_token',
     ];
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
-    protected function casts(): array
-    {
-        return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
-        ];
-    }
-
-
     protected $casts = [
+        'email_verified_at' => 'datetime',
+        'password' => 'hashed',
         'balance' => 'decimal:2',
     ];
-
-    // Um usuário tem uma carteira
-    public function wallet(): HasOne
-    {
-        return $this->hasOne(Wallet::class, 'owner_id')->where('owner_type', User::class);
-    }
 
     // Um usuário pode fazer várias transferências (como pagador)
     public function sentTransactions(): HasMany
@@ -70,14 +43,19 @@ class User extends Authenticatable
     // Um usuário pode receber várias transferências (como recebedor)
     public function receivedTransactions(): HasMany
     {
-        return $this->hasManyThrough(
-            Transaction::class,
-            User::class,
-            'id',
-            'payee_id',
-            'id',
-            'id'
-        )->where('payee_type', User::class);
+        return $this->hasMany(Transaction::class, 'payee_id');
+    }
+
+    // Verificar se é lojista/comerciante
+    public function isMerchant(): bool
+    {
+        return $this->type === self::TYPE_MERCHANT;
+    }
+
+    // Verificar se pode enviar transferência
+    public function canSendTransfer(): bool
+    {
+        return !$this->isMerchant();
     }
 
     // Verificar se tem saldo suficiente

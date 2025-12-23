@@ -1,0 +1,208 @@
+name: CI - Tests and Code Quality
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  tests:
+    name: Tests (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3']
+    
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: testing
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, mysql, pdo_mysql, bcmath, intl, gd, exif, iconv
+          coverage: xdebug
+
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache composer dependencies
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Fix composer.lock for PHP 8.3
+        run: |
+          if [ ! -f composer.lock ]; then
+            echo "composer.lock não existe, criando novo..."
+            composer install --no-interaction --prefer-dist
+          else
+            echo "Verificando compatibilidade do composer.lock..."
+            composer install --no-interaction --prefer-dist || {
+              echo "composer.lock incompatível, atualizando dependências..."
+              rm composer.lock
+              composer clear-cache
+              composer install --no-interaction --prefer-dist
+            }
+          fi
+
+      - name: Copy .env
+        run: cp .env.example .env
+
+      - name: Generate application key
+        run: php artisan key:generate
+
+      - name: Set testing environment
+        run: |
+          echo "DB_CONNECTION=mysql" >> .env
+          echo "DB_HOST=127.0.0.1" >> .env
+          echo "DB_PORT=3306" >> .env
+          echo "DB_DATABASE=testing" >> .env
+          echo "DB_USERNAME=root" >> .env
+          echo "DB_PASSWORD=root" >> .env
+
+      - name: Run migrations
+        run: php artisan migrate --force
+
+      - name: Execute tests
+        run: |
+          if php artisan test --coverage 2>/dev/null; then
+            echo "✅ Testes executados com cobertura"
+          else
+            echo "⚠️ Executando testes sem cobertura (Xdebug pode não estar disponível)"
+            php artisan test
+          fi
+
+      - name: Upload coverage reports to Codecov
+        if: matrix.php == '8.3'
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+        continue-on-error: true
+
+  code-quality:
+    name: Code Quality (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3']
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, mysql, bcmath
+          tools: composer:v2
+
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache composer dependencies
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install dependencies
+        run: |
+          if ! composer install --no-interaction --prefer-dist; then
+            echo "Falha ao instalar com lock existente, atualizando..."
+            rm -f composer.lock
+            composer clear-cache
+            composer install --no-interaction --prefer-dist
+          fi
+
+      - name: Install dev tools
+        run: |
+          composer require --dev friendsofphp/php-cs-fixer || echo "PHP CS Fixer já instalado ou não disponível"
+          composer require --dev phpstan/phpstan || echo "PHPStan já instalado ou não disponível"
+          composer require --dev squizlabs/php_codesniffer || echo "PHP_CodeSniffer já instalado ou não disponível"
+
+      - name: Check code style (PHP CS Fixer)
+        run: |
+          if [ -f vendor/bin/php-cs-fixer ]; then
+            vendor/bin/php-cs-fixer fix --dry-run --diff --verbose || echo "⚠️ Alguns problemas de estilo encontrados"
+          else
+            echo "⚠️ PHP CS Fixer não instalado, pulando..."
+          fi
+        continue-on-error: true
+
+      - name: Run PHPStan
+        run: |
+          if [ -f vendor/bin/phpstan ]; then
+            vendor/bin/phpstan analyse app --level=5 || echo "⚠️ Alguns problemas encontrados pelo PHPStan"
+          else
+            echo "⚠️ PHPStan não instalado, pulando..."
+          fi
+        continue-on-error: true
+
+      - name: Check PSR-12 compliance (PHP_CodeSniffer)
+        run: |
+          if [ -f vendor/bin/phpcs ]; then
+            vendor/bin/phpcs app --standard=PSR12 --report=summary || echo "⚠️ Alguns problemas PSR-12 encontrados"
+          else
+            echo "⚠️ PHP_CodeSniffer não instalado, pulando..."
+          fi
+        continue-on-error: true
+
+  security:
+    name: Security Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: dom, curl, libxml, mbstring, zip
+
+      - name: Install dependencies
+        run: |
+          if ! composer install --no-interaction --prefer-dist; then
+            rm -f composer.lock
+            composer clear-cache
+            composer install --no-interaction --prefer-dist
+          fi
+
+      - name: Security check (composer audit)
+        run: composer audit || echo "⚠️ Algumas vulnerabilidades encontradas"
+        continue-on-error: true
+
+      - name: Check for known vulnerabilities
+        run: |
+          composer require --dev enlightn/security-checker || true
+          if [ -f vendor/bin/security-checker ]; then
+            vendor/bin/security-checker security:check composer.lock || echo "⚠️ Vulnerabilidades encontradas"
+          else
+            echo "⚠️ Security checker não disponível"
+          fi
+        continue-on-error: true

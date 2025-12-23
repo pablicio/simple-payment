@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -26,8 +27,11 @@ class UserFactory extends Factory
         return [
             'name' => fake()->name(),
             'email' => fake()->unique()->safeEmail(),
+            'document' => fake()->numerify('###########'),
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
+            'type' => User::TYPE_COMMON,
+            'balance' => 0,
             'remember_token' => Str::random(10),
         ];
     }
@@ -39,6 +43,26 @@ class UserFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'email_verified_at' => null,
+        ]);
+    }
+
+    /**
+     * Indicate that the user is a common user.
+     */
+    public function common(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'type' => User::TYPE_COMMON,
+        ]);
+    }
+
+    /**
+     * Indicate that the user is a merchant.
+     */
+    public function merchant(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'type' => User::TYPE_MERCHANT,
         ]);
     }
 }
