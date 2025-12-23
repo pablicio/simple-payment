@@ -28,7 +28,7 @@ jobs:
         run: |
           cp .env.example .env
           php artisan key:generate
-          php artisan test
+          vendor/bin/phpunit
 
       - name: Create deployment artifact
         run: |

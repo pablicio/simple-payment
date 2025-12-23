@@ -83,11 +83,13 @@ jobs:
 
       - name: Execute tests
         run: |
-          if php artisan test --coverage 2>/dev/null; then
-            echo "✅ Testes executados com cobertura"
+          if composer test 2>/dev/null; then
+            echo "✅ Testes executados via composer test"
+          elif vendor/bin/phpunit --coverage-text 2>/dev/null; then
+            echo "✅ Testes executados com cobertura via phpunit"
           else
-            echo "⚠️ Executando testes sem cobertura (Xdebug pode não estar disponível)"
-            php artisan test
+            echo "⚠️ Executando testes sem cobertura"
+            vendor/bin/phpunit
           fi
 
       - name: Upload coverage reports to Codecov
