@@ -2,8 +2,8 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
 use App\Models\Transaction;
+use App\Models\User;
 use Illuminate\Database\Seeder;
 
 class TransactionSeeder extends Seeder
@@ -16,148 +16,120 @@ class TransactionSeeder extends Seeder
         // Limpar transações existentes
         Transaction::truncate();
 
-        // Buscar usuários
-        $joao = User::where('email', 'joao@example.com')->first();
-        $maria = User::where('email', 'maria@example.com')->first();
-        $pedro = User::where('email', 'pedro@example.com')->first();
-        $ana = User::where('email', 'ana@example.com')->first();
-        $carlos = User::where('email', 'carlos@example.com')->first();
+        // Buscar usuários para criar transações válidas
+        $commonUsers = User::where('type', User::TYPE_COMMON)->get();
+        $merchants = User::where('type', User::TYPE_MERCHANT)->get();
 
-        $lojaAbc = User::where('email', 'contato@lojaabc.com')->first();
-        $superCentral = User::where('email', 'vendas@supercentral.com')->first();
-        $techStore = User::where('email', 'contato@techstore.com')->first();
-        $restaurante = User::where('email', 'pedidos@saborarte.com')->first();
-
-        // Verificar se os usuários existem
-        if (!$joao || !$maria || !$lojaAbc) {
-            $this->command->warn('⚠️  Execute primeiro: php artisan db:seed --class=UserSeeder');
+        if ($commonUsers->isEmpty() || $merchants->isEmpty()) {
+            $this->command->warn('⚠️  Não há usuários suficientes para criar transações');
             return;
         }
 
-        // Transações de exemplo
-        $transactions = [
-            // Transferências entre usuários comuns
-            [
-                'payer_id' => $joao->id,
-                'payee_id' => $maria->id,
-                'amount' => 100.00,
-                'status' => Transaction::STATUS_COMPLETED,
-                'description' => 'Pagamento de almoço',
-                'created_at' => now()->subDays(5),
-            ],
-            [
-                'payer_id' => $maria->id,
-                'payee_id' => $pedro->id,
-                'amount' => 50.50,
-                'status' => Transaction::STATUS_COMPLETED,
-                'description' => 'Divisão de conta',
-                'created_at' => now()->subDays(4),
-            ],
-            [
-                'payer_id' => $ana->id,
-                'payee_id' => $carlos->id,
-                'amount' => 200.00,
-                'status' => Transaction::STATUS_COMPLETED,
-                'description' => 'Empréstimo',
-                'created_at' => now()->subDays(3),
-            ],
+        $transactions = [];
 
-            // Compras em lojistas
-            [
-                'payer_id' => $joao->id,
-                'payee_id' => $lojaAbc->id,
-                'amount' => 250.00,
-                'status' => Transaction::STATUS_COMPLETED,
-                'description' => 'Compra de produtos',
-                'created_at' => now()->subDays(2),
-            ],
-            [
-                'payer_id' => $maria->id,
-                'payee_id' => $superCentral->id,
-                'amount' => 180.75,
-                'status' => Transaction::STATUS_COMPLETED,
-                'description' => 'Compras do mês',
-                'created_at' => now()->subDays(2),
-            ],
-            [
-                'payer_id' => $pedro->id,
-                'payee_id' => $techStore->id,
-                'amount' => 1500.00,
-                'status' => Transaction::STATUS_COMPLETED,
-                'description' => 'Notebook',
-                'created_at' => now()->subDay(),
-            ],
-            [
-                'payer_id' => $ana->id,
-                'payee_id' => $restaurante->id,
-                'amount' => 85.50,
-                'status' => Transaction::STATUS_COMPLETED,
-                'description' => 'Jantar',
-                'created_at' => now()->subDay(),
-            ],
-            [
-                'payer_id' => $carlos->id,
-                'payee_id' => $lojaAbc->id,
-                'amount' => 120.00,
-                'status' => Transaction::STATUS_COMPLETED,
-                'description' => 'Vestuário',
-                'created_at' => now()->subHours(12),
-            ],
-
-            // Transferências mais recentes
-            [
-                'payer_id' => $joao->id,
-                'payee_id' => $ana->id,
-                'amount' => 75.00,
-                'status' => Transaction::STATUS_COMPLETED,
-                'description' => 'Presente',
-                'created_at' => now()->subHours(6),
-            ],
-            [
-                'payer_id' => $maria->id,
-                'payee_id' => $lojaAbc->id,
-                'amount' => 300.00,
-                'status' => Transaction::STATUS_COMPLETED,
-                'description' => 'Compra online',
-                'created_at' => now()->subHours(3),
-            ],
-
-            // Algumas transações mais recentes
-            [
-                'payer_id' => $pedro->id,
-                'payee_id' => $superCentral->id,
-                'amount' => 95.20,
-                'status' => Transaction::STATUS_COMPLETED,
-                'description' => 'Compras da semana',
-                'created_at' => now()->subHour(),
-            ],
-            [
-                'payer_id' => $carlos->id,
-                'payee_id' => $maria->id,
-                'amount' => 40.00,
-                'status' => Transaction::STATUS_COMPLETED,
-                'description' => 'Pagamento de transporte',
-                'created_at' => now()->subMinutes(30),
-            ],
-
-            // Uma transação pendente (simulação - normalmente não ficaria pendente)
-            [
-                'payer_id' => $ana->id,
-                'payee_id' => $techStore->id,
-                'amount' => 450.00,
-                'status' => Transaction::STATUS_PENDING,
-                'description' => 'Fone de ouvido',
-                'created_at' => now()->subMinutes(5),
-            ],
+        // Transações de usuário comum para lojista (pagamentos)
+        $transactions[] = [
+            'payer_id' => $commonUsers[0]->id, // João
+            'payee_id' => $merchants[0]->id,   // Loja ABC
+            'value' => 150.00,
+            'status' => Transaction::STATUS_COMPLETED,
+            'created_at' => now()->subDays(5),
+            'updated_at' => now()->subDays(5),
         ];
 
-        // Criar transações
-        foreach ($transactions as $transactionData) {
-            Transaction::create($transactionData);
+        $transactions[] = [
+            'payer_id' => $commonUsers[1]->id, // Maria
+            'payee_id' => $merchants[1]->id,   // Supermercado Central
+            'value' => 85.50,
+            'status' => Transaction::STATUS_COMPLETED,
+            'created_at' => now()->subDays(4),
+            'updated_at' => now()->subDays(4),
+        ];
+
+        $transactions[] = [
+            'payer_id' => $commonUsers[2]->id, // Pedro
+            'payee_id' => $merchants[2]->id,   // Tech Store
+            'value' => 300.00,
+            'status' => Transaction::STATUS_COMPLETED,
+            'created_at' => now()->subDays(3),
+            'updated_at' => now()->subDays(3),
+        ];
+
+        // Transações entre usuários comuns (P2P)
+        $transactions[] = [
+            'payer_id' => $commonUsers[0]->id, // João
+            'payee_id' => $commonUsers[1]->id, // Maria
+            'value' => 50.00,
+            'status' => Transaction::STATUS_COMPLETED,
+            'created_at' => now()->subDays(2),
+            'updated_at' => now()->subDays(2),
+        ];
+
+        $transactions[] = [
+            'payer_id' => $commonUsers[3]->id, // Ana
+            'payee_id' => $commonUsers[4]->id, // Carlos
+            'value' => 100.00,
+            'status' => Transaction::STATUS_COMPLETED,
+            'created_at' => now()->subDays(1),
+            'updated_at' => now()->subDays(1),
+        ];
+
+        // Transações pendentes
+        $transactions[] = [
+            'payer_id' => $commonUsers[4]->id, // Carlos
+            'payee_id' => $merchants[3]->id,   // Restaurante
+            'value' => 45.00,
+            'status' => Transaction::STATUS_PENDING,
+            'created_at' => now()->subHours(2),
+            'updated_at' => now()->subHours(2),
+        ];
+
+        // Transação falhada
+        $transactions[] = [
+            'payer_id' => $commonUsers[2]->id, // Pedro
+            'payee_id' => $merchants[4]->id,   // Farmácia
+            'value' => 200.00,
+            'status' => Transaction::STATUS_FAILED,
+            'created_at' => now()->subHour(),
+            'updated_at' => now()->subHour(),
+        ];
+
+        // Mais transações recentes
+        $transactions[] = [
+            'payer_id' => $commonUsers[1]->id, // Maria
+            'payee_id' => $merchants[0]->id,   // Loja ABC
+            'value' => 75.30,
+            'status' => Transaction::STATUS_COMPLETED,
+            'created_at' => now()->subMinutes(30),
+            'updated_at' => now()->subMinutes(30),
+        ];
+
+        $transactions[] = [
+            'payer_id' => $commonUsers[3]->id, // Ana
+            'payee_id' => $merchants[1]->id,   // Supermercado
+            'value' => 120.00,
+            'status' => Transaction::STATUS_COMPLETED,
+            'created_at' => now()->subMinutes(15),
+            'updated_at' => now()->subMinutes(15),
+        ];
+
+        $transactions[] = [
+            'payer_id' => $commonUsers[0]->id, // João
+            'payee_id' => $commonUsers[2]->id, // Pedro
+            'value' => 25.00,
+            'status' => Transaction::STATUS_COMPLETED,
+            'created_at' => now()->subMinutes(5),
+            'updated_at' => now()->subMinutes(5),
+        ];
+
+        // Inserir todas as transações
+        foreach ($transactions as $transaction) {
+            Transaction::create($transaction);
         }
 
         $this->command->info('✅ Criadas ' . count($transactions) . ' transações de exemplo');
-        $this->command->info('📊 ' . Transaction::where('status', Transaction::STATUS_COMPLETED)->count() . ' completadas');
-        $this->command->info('⏳ ' . Transaction::where('status', Transaction::STATUS_PENDING)->count() . ' pendentes');
+        $this->command->line('   • ' . collect($transactions)->where('status', Transaction::STATUS_COMPLETED)->count() . ' completadas');
+        $this->command->line('   • ' . collect($transactions)->where('status', Transaction::STATUS_PENDING)->count() . ' pendentes');
+        $this->command->line('   • ' . collect($transactions)->where('status', Transaction::STATUS_FAILED)->count() . ' falhas');
     }
 }

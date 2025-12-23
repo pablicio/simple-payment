@@ -1,0 +1,3 @@
+# Adicionar ao .gitignore existente
+docker/mysql/data/
+*.sql
