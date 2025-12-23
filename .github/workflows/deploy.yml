@@ -22,12 +22,29 @@ jobs:
           extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, mysql, bcmath
 
       - name: Install dependencies
-        run: composer install --prefer-dist --no-interaction --no-progress --no-dev --optimize-autoloader
+        run: |
+          composer install --prefer-dist --no-interaction --no-progress --no-dev --optimize-autoloader
+          # Verificar se composer instalou corretamente
+          if [ ! -d vendor ]; then
+            echo "❌ Vendor directory não foi criado!"
+            exit 1
+          fi
+          echo "✅ Dependências instaladas com sucesso"
 
       - name: Run tests
         run: |
           cp .env.example .env
           php artisan key:generate
+          
+          # Para deploy, precisamos instalar dependências de dev para rodar testes
+          composer require --dev phpunit/phpunit --no-interaction
+          
+          # Verificar se PHPUnit existe
+          if [ ! -f vendor/bin/phpunit ]; then
+            echo "❌ PHPUnit não encontrado após instalação"
+            exit 1
+          fi
+          
           # Tentar diferentes comandos de teste
           if php artisan test 2>/dev/null; then
             echo "✅ Tests passed via artisan"
@@ -35,7 +52,7 @@ jobs:
             echo "✅ Tests passed via composer"
           else
             echo "✅ Running tests via phpunit"
-            vendor/bin/phpunit
+            vendor/bin/phpunit --testdox
           fi
 
       - name: Create deployment artifact

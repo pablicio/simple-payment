@@ -48,20 +48,19 @@ jobs:
           key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
           restore-keys: ${{ runner.os }}-composer-
 
-      - name: Fix composer.lock for PHP 8.3
+      - name: Install dependencies
         run: |
-          if [ ! -f composer.lock ]; then
-            echo "composer.lock não existe, criando novo..."
-            composer install --no-interaction --prefer-dist
-          else
-            echo "Verificando compatibilidade do composer.lock..."
-            composer install --no-interaction --prefer-dist || {
-              echo "composer.lock incompatível, atualizando dependências..."
-              rm composer.lock
-              composer clear-cache
-              composer install --no-interaction --prefer-dist
-            }
+          composer install --no-interaction --prefer-dist --no-progress
+          # Verificar se phpunit foi instalado
+          if [ ! -f vendor/bin/phpunit ]; then
+            echo "⚠️ PHPUnit não encontrado, reinstalando dependências..."
+            rm -rf vendor composer.lock
+            composer install --no-interaction --prefer-dist --no-progress
           fi
+          # Confirmar instalação
+          ls -la vendor/bin/ | grep phpunit || echo "❌ PHPUnit ainda não instalado!"
+          php --version
+          composer --version
 
       - name: Copy .env
         run: cp .env.example .env
@@ -83,16 +82,24 @@ jobs:
 
       - name: Execute tests
         run: |
+          echo "Verificando se PHPUnit está disponível..."
+          if [ -f vendor/bin/phpunit ]; then
+            echo "✅ PHPUnit encontrado em vendor/bin/phpunit"
+          else
+            echo "❌ PHPUnit NÃO encontrado!"
+            echo "Conteúdo do diretório vendor/bin/:"
+            ls -la vendor/bin/ || echo "Diretório vendor/bin não existe"
+            exit 1
+          fi
+          
           # Tentar diferentes comandos de teste em ordem de preferência
           if php artisan test 2>/dev/null; then
             echo "✅ Testes executados via 'php artisan test'"
           elif composer test 2>/dev/null; then
             echo "✅ Testes executados via 'composer test'"
-          elif vendor/bin/phpunit --testdox 2>/dev/null; then
-            echo "✅ Testes executados via 'vendor/bin/phpunit'"
           else
-            echo "⚠️ Tentando executar testes com PHPUnit direto"
-            vendor/bin/phpunit
+            echo "✅ Executando testes via vendor/bin/phpunit"
+            vendor/bin/phpunit --testdox
           fi
 
       - name: Upload coverage reports to Codecov
