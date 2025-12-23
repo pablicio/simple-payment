@@ -10,12 +10,14 @@ class Transaction extends Model
     protected $fillable = [
         'payer_id',
         'payee_id',
+        'value',
         'amount',
         'status',
         'description',
     ];
 
     protected $casts = [
+        'value' => 'decimal:2',
         'amount' => 'decimal:2',
     ];
 
@@ -33,6 +35,12 @@ class Transaction extends Model
     public function payee(): BelongsTo
     {
         return $this->belongsTo(User::class, 'payee_id');
+    }
+
+    // Accessor para compatibilidade
+    public function getAmountAttribute($value)
+    {
+        return $this->attributes['value'] ?? $value;
     }
 
     // Marcar como completa

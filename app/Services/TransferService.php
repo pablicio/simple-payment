@@ -35,7 +35,7 @@ class TransferService
             $transaction = Transaction::create([
                 'payer_id' => $payer->id,
                 'payee_id' => $payee->id,
-                'amount' => $amount,
+                'value' => $amount,
                 'status' => Transaction::STATUS_PENDING,
             ]);
             
@@ -84,23 +84,50 @@ class TransferService
      */
     private function authorize(): bool
     {
+        // Modo de teste: sempre autoriza se configurado
+        if (env('TRANSFER_AUTHORIZER_MOCK', false)) {
+            \Log::info('Transfer authorized by mock');
+            return true;
+        }
+
         try {
             $response = Http::timeout(5)->get(self::AUTHORIZER_URL);
             
             // Verifica se a resposta foi bem sucedida (status 2xx)
             if (!$response->successful()) {
+                \Log::warning('Authorizer returned non-successful status', [
+                    'status' => $response->status()
+                ]);
                 return false;
             }
             
-            // Verifica o conteúdo da resposta (para mocks)
+            // Verifica o conteúdo da resposta
             $data = $response->json();
-            if (isset($data['status']) && $data['status'] !== 'success') {
-                return false;
+            
+            // API retorna: {"status": "fail"} ou {"status": "success"}
+            // Ou retorna: {"message": "Autorizado"}
+            if (isset($data['status'])) {
+                $authorized = $data['status'] === 'success';
+            } elseif (isset($data['message'])) {
+                $authorized = stripos($data['message'], 'autorizado') !== false;
+            } else {
+                $authorized = true; // Se não tem status/message, autoriza
             }
             
-            return true;
+            \Log::info('Authorizer response', [
+                'data' => $data,
+                'authorized' => $authorized
+            ]);
+            
+            return $authorized;
+            
         } catch (\Exception $e) {
-            \Log::warning('Authorizer service failed', ['error' => $e->getMessage()]);
+            \Log::warning('Authorizer service failed', [
+                'error' => $e->getMessage(),
+                'fallback' => 'denying'
+            ]);
+            
+            // Em caso de erro, nega a transferência por segurança
             return false;
         }
     }
