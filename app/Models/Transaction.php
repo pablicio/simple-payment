@@ -4,14 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class Transaction extends Model
 {
     protected $fillable = [
         'payer_id',
         'payee_id',
-        'payee_type',
         'amount',
         'status',
         'description',
@@ -25,16 +23,16 @@ class Transaction extends Model
     const STATUS_COMPLETED = 'completed';
     const STATUS_FAILED = 'failed';
 
-    // Quem está enviando (sempre um User)
+    // Quem está enviando
     public function payer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'payer_id');
     }
 
-    // Quem está recebendo (User ou Shopkeeper)
-    public function payee(): MorphTo
+    // Quem está recebendo
+    public function payee(): BelongsTo
     {
-        return $this->morphTo();
+        return $this->belongsTo(User::class, 'payee_id');
     }
 
     // Marcar como completa

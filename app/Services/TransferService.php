@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\User;
-use App\Models\Shopkeeper;
 use App\Models\Transaction;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -16,83 +15,68 @@ class TransferService
     /**
      * Executar transferência entre usuários
      */
-    public function transfer(int $payerId, int $payeeId, float $amount, ?string $payeeType = null)
+    public function transfer(int $payerId, int $payeeId, float $amount): Transaction
     {
-        return DB::transaction(function () use ($payerId, $payeeId, $amount, $payeeType) {
-            // 1. Buscar pagador (sempre User)
-            $payer = User::find($payerId);
-            if (!$payer) {
-                throw new \Exception('Payer not found', 404);
-            }
-
-            // 2. Verificar se pagador é lojista (não pode enviar)
-            if ($payer->is_shopkeeper ?? false) {
-                throw new \Exception('Shopkeepers cannot send transfers', 403);
-            }
-
-            // 3. Buscar recebedor (User ou Shopkeeper)
-            $payee = $this->findPayee($payeeId, $payeeType);
-            if (!$payee) {
-                throw new \Exception('Payee not found', 404);
-            }
-
-            // 4. Não pode transferir para si mesmo
-            if ($payer->id === $payeeId && $payeeType === User::class) {
-                throw new \Exception('Cannot transfer to yourself', 400);
-            }
-
-            // 5. Verificar saldo
-            if (!$payer->hasSufficientBalance($amount)) {
-                throw new \Exception('Insufficient balance', 400);
-            }
-
-            // 6. Consultar autorizador externo
+        return DB::transaction(function () use ($payerId, $payeeId, $amount) {
+            
+            // 1. Buscar usuários com lock pessimista
+            $payer = User::lockForUpdate()->findOrFail($payerId);
+            $payee = User::lockForUpdate()->findOrFail($payeeId);
+            
+            // 2. Validar regras de negócio
+            $this->validateTransfer($payer, $payee, $amount);
+            
+            // 3. Consultar autorizador externo
             if (!$this->authorize()) {
-                throw new \Exception('Transfer not authorized', 403);
+                throw new \Exception('Transfer not authorized');
             }
-
-            // 7. Criar transação com status pending
+            
+            // 4. Criar transação com status pending
             $transaction = Transaction::create([
                 'payer_id' => $payer->id,
-                'payee_id' => $payeeId,
-                'payee_type' => $payeeType ?? User::class,
+                'payee_id' => $payee->id,
                 'amount' => $amount,
                 'status' => Transaction::STATUS_PENDING,
             ]);
-
-            // 8. Descontar do pagador
+            
+            // 5. Executar transferência
             $payer->decrement('balance', $amount);
-
-            // 9. Adicionar ao recebedor
             $payee->increment('balance', $amount);
-
-            // 10. Marcar transação como completa
+            
+            // 6. Marcar como completa
             $transaction->markAsCompleted();
-
-            // 11. Notificar o recebedor (assíncrono, não bloqueia)
+            
+            // 7. Notificar (não bloqueia se falhar)
             $this->notifyPayee($payee, $payer, $amount);
-
+            
             return $transaction->load('payer', 'payee');
         });
     }
 
     /**
-     * Encontrar recebedor (User ou Shopkeeper)
+     * Validar regras de negócio da transferência
      */
-    private function findPayee(int $payeeId, ?string $payeeType)
+    private function validateTransfer(User $payer, User $payee, float $amount): void
     {
-        if ($payeeType === 'shopkeeper' || $payeeType === Shopkeeper::class) {
-            return Shopkeeper::find($payeeId);
+        // Lojista não pode enviar
+        if ($payer->isMerchant()) {
+            throw new \Exception('Merchants cannot send transfers');
         }
-
-        // Padrão: buscar como User primeiro
-        $user = User::find($payeeId);
-        if ($user) {
-            return $user;
+        
+        // Não pode transferir para si mesmo
+        if ($payer->id === $payee->id) {
+            throw new \Exception('Cannot transfer to yourself');
         }
-
-        // Se não encontrar User, tenta Shopkeeper
-        return Shopkeeper::find($payeeId);
+        
+        // Valor deve ser positivo
+        if ($amount <= 0) {
+            throw new \Exception('Amount must be greater than zero');
+        }
+        
+        // Verificar saldo suficiente
+        if (!$payer->hasSufficientBalance($amount)) {
+            throw new \Exception('Insufficient balance');
+        }
     }
 
     /**
@@ -102,32 +86,29 @@ class TransferService
     {
         try {
             $response = Http::timeout(5)->get(self::AUTHORIZER_URL);
-            
-            // Simular resposta do mock
-            return $response->status() === 200;
+            return $response->successful();
         } catch (\Exception $e) {
-            // Se falhar, considera não autorizado
+            \Log::warning('Authorizer service failed', ['error' => $e->getMessage()]);
             return false;
         }
     }
 
     /**
-     * Notificar o recebedor
+     * Notificar o recebedor (assíncrono, não bloqueia)
      */
-    private function notifyPayee($payee, User $payer, float $amount): void
+    private function notifyPayee(User $payee, User $payer, float $amount): void
     {
         try {
-            Http::timeout(5)->post(self::NOTIFIER_URL, [
-                'payee_id' => $payee->id,
-                'payee_name' => $payee->name,
-                'payee_email' => $payee->email,
-                'payer_name' => $payer->name,
-                'amount' => $amount,
+            Http::timeout(3)->post(self::NOTIFIER_URL, [
+                'email' => $payee->email,
                 'message' => "Você recebeu R$ {$amount} de {$payer->name}",
             ]);
         } catch (\Exception $e) {
-            // Log do erro mas não falha a transferência
-            \Log::warning('Notification failed', ['error' => $e->getMessage()]);
+            // Log mas não quebra a transferência
+            \Log::warning('Notification failed', [
+                'payee_id' => $payee->id,
+                'error' => $e->getMessage()
+            ]);
         }
     }
 }
