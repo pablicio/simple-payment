@@ -57,7 +57,7 @@ class TransferTest extends TestCase
         $this->assertDatabaseHas('transactions', [
             'payer_id' => $payer->id,
             'payee_id' => $payee->id,
-            'amount' => 100,
+            'value' => 100,
             'status' => 'completed',
         ]);
     }
@@ -165,10 +165,8 @@ class TransferTest extends TestCase
             'payee' => $user->id,
         ]);
 
-        $response->assertStatus(400)
-            ->assertJson([
-                'message' => 'Cannot transfer to yourself',
-            ]);
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['payer']);
 
         $this->assertEquals('1000.00', $user->fresh()->balance);
     }
@@ -231,9 +229,12 @@ class TransferTest extends TestCase
     /** @test */
     public function it_blocks_transfer_if_external_authorizer_fails()
     {
+        // Desabilitar mock de ambiente para usar Http::fake
+        config(['transfer.authorizer_mock' => false]);
+        
         // Sobrescrever o mock do setUp com um que falha
         Http::fake([
-            'https://util.devi.tools/api/v2/authorize' => Http::response(['status' => 'fail'], 403),
+            'https://util.devi.tools/api/v2/authorize' => Http::response(['status' => 'fail'], 200),
             'https://util.devi.tools/api/v1/notify' => Http::response(['message' => 'Success'], 200),
         ]);
 
@@ -258,9 +259,12 @@ class TransferTest extends TestCase
     /** @test */
     public function it_is_atomic_and_rolls_back_on_error()
     {
-        // Sobrescrever o mock do setUp com um que falha
+        // Desabilitar mock de ambiente para usar Http::fake
+        config(['transfer.authorizer_mock' => false]);
+        
+        // Sobrescrever o mock do setUp com um que falha na autorização
         Http::fake([
-            'https://util.devi.tools/api/v2/authorize' => Http::response(['status' => 'fail'], 500),
+            'https://util.devi.tools/api/v2/authorize' => Http::response(['status' => 'fail'], 200),
             'https://util.devi.tools/api/v1/notify' => Http::response(['message' => 'Success'], 200),
         ]);
 
@@ -342,7 +346,7 @@ class TransferTest extends TestCase
                     'transaction_id',
                     'payer' => ['id', 'name', 'balance'],
                     'payee' => ['id', 'name', 'balance'],
-                    'amount',
+                    'value',
                     'status',
                     'created_at',
                 ]

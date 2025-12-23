@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\TransferRequest;
+use App\Http\Resources\TransferResource;
 use App\Services\TransferService;
 
 class TransferController extends Controller
@@ -36,25 +37,9 @@ class TransferController extends Controller
             );
 
             // Retornar sucesso com dados da transação
-            return response()->json([
-                'message' => 'Transfer completed successfully',
-                'data' => [
-                    'transaction_id' => $transaction->id,
-                    'payer' => [
-                        'id' => $transaction->payer->id,
-                        'name' => $transaction->payer->name,
-                        'balance' => $transaction->payer->balance,
-                    ],
-                    'payee' => [
-                        'id' => $transaction->payee->id,
-                        'name' => $transaction->payee->name,
-                        'balance' => $transaction->payee->balance,
-                    ],
-                    'value' => $transaction->value,
-                    'status' => $transaction->status,
-                    'created_at' => $transaction->created_at->toIso8601String(),
-                ]
-            ], 201);
+            return (new TransferResource($transaction))
+                ->response()
+                ->setStatusCode(201);
 
         } catch (\Exception $e) {
             return response()->json([

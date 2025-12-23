@@ -9,9 +9,6 @@ use Illuminate\Support\Facades\Http;
 
 class TransferService
 {
-    const AUTHORIZER_URL = 'https://util.devi.tools/api/v2/authorize';
-    const NOTIFIER_URL = 'https://util.devi.tools/api/v1/notify';
-
     /**
      * Executar transferência entre usuários
      */
@@ -85,13 +82,13 @@ class TransferService
     private function authorize(): bool
     {
         // Modo de teste: sempre autoriza se configurado
-        if (env('TRANSFER_AUTHORIZER_MOCK', false)) {
+        if (config('transfer.authorizer_mock', false)) {
             \Log::info('Transfer authorized by mock');
             return true;
         }
 
         try {
-            $response = Http::timeout(5)->get(self::AUTHORIZER_URL);
+            $response = Http::timeout(5)->get(config('transfer.authorizer_url'));
             
             // Verifica se a resposta foi bem sucedida (status 2xx)
             if (!$response->successful()) {
@@ -138,7 +135,7 @@ class TransferService
     private function notifyPayee(User $payee, User $payer, float $amount): void
     {
         try {
-            Http::timeout(3)->post(self::NOTIFIER_URL, [
+            Http::timeout(3)->post(config('transfer.notifier_url'), [
                 'email' => $payee->email,
                 'message' => "Você recebeu R$ {$amount} de {$payer->name}",
             ]);

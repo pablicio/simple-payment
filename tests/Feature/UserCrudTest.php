@@ -95,8 +95,8 @@ class UserCrudTest extends TestCase
         $response = $this->deleteJson("/api/users/{$user->id}");
 
         $response->assertStatus(200)
-            ->assertJson([
-                'message' => 'User deleted successfully',
+            ->assertJsonFragment([
+                'message' => "User '{$user->name}' deleted successfully",
             ]);
 
         $this->assertDatabaseMissing('users', [

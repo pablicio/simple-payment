@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreUserRequest;
 use App\Http\Requests\UpdateUserRequest;
+use App\Http\Resources\UserResource;
+use App\Http\Resources\UserCollection;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 
@@ -19,9 +21,7 @@ class UserController extends Controller
             ->orderBy('id')
             ->get();
 
-        return response()->json([
-            'data' => $users
-        ]);
+        return new UserCollection($users);
     }
 
     /**
@@ -47,7 +47,7 @@ class UserController extends Controller
 
             return response()->json([
                 'message' => 'User created successfully',
-                'data' => $user->only('id', 'name', 'email', 'document', 'type', 'balance')
+                'data' => new UserResource($user)
             ], 201);
 
         } catch (\Exception $e) {
@@ -68,7 +68,7 @@ class UserController extends Controller
             $user = User::findOrFail($id);
 
             return response()->json([
-                'data' => $user->only('id', 'name', 'email', 'document', 'type', 'balance')
+                'data' => new UserResource($user)
             ]);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
@@ -101,7 +101,7 @@ class UserController extends Controller
 
             return response()->json([
                 'message' => 'User updated successfully',
-                'data' => $user->only('id', 'name', 'email', 'document', 'type', 'balance')
+                'data' => new UserResource($user)
             ]);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
