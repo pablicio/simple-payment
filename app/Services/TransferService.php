@@ -86,7 +86,19 @@ class TransferService
     {
         try {
             $response = Http::timeout(5)->get(self::AUTHORIZER_URL);
-            return $response->successful();
+            
+            // Verifica se a resposta foi bem sucedida (status 2xx)
+            if (!$response->successful()) {
+                return false;
+            }
+            
+            // Verifica o conteúdo da resposta (para mocks)
+            $data = $response->json();
+            if (isset($data['status']) && $data['status'] !== 'success') {
+                return false;
+            }
+            
+            return true;
         } catch (\Exception $e) {
             \Log::warning('Authorizer service failed', ['error' => $e->getMessage()]);
             return false;
