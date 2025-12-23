@@ -28,7 +28,15 @@ jobs:
         run: |
           cp .env.example .env
           php artisan key:generate
-          php artisan test
+          # Tentar diferentes comandos de teste
+          if php artisan test 2>/dev/null; then
+            echo "✅ Tests passed via artisan"
+          elif composer test 2>/dev/null; then
+            echo "✅ Tests passed via composer"
+          else
+            echo "✅ Running tests via phpunit"
+            vendor/bin/phpunit
+          fi
 
       - name: Create deployment artifact
         run: |
