@@ -83,12 +83,15 @@ jobs:
 
       - name: Execute tests
         run: |
-          if composer test 2>/dev/null; then
-            echo "✅ Testes executados via composer test"
-          elif vendor/bin/phpunit --coverage-text 2>/dev/null; then
-            echo "✅ Testes executados com cobertura via phpunit"
+          # Tentar diferentes comandos de teste em ordem de preferência
+          if php artisan test 2>/dev/null; then
+            echo "✅ Testes executados via 'php artisan test'"
+          elif composer test 2>/dev/null; then
+            echo "✅ Testes executados via 'composer test'"
+          elif vendor/bin/phpunit --testdox 2>/dev/null; then
+            echo "✅ Testes executados via 'vendor/bin/phpunit'"
           else
-            echo "⚠️ Executando testes sem cobertura"
+            echo "⚠️ Tentando executar testes com PHPUnit direto"
             vendor/bin/phpunit
           fi
 
