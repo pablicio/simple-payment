@@ -57,13 +57,19 @@ jobs:
 
       - name: Create deployment artifact
         run: |
-          tar -czf app.tar.gz \
+          # Criar arquivo tar.gz fora do diretório atual para evitar ler o próprio arquivo
+          tar -czf ../app.tar.gz \
             --exclude='.git' \
             --exclude='node_modules' \
             --exclude='tests' \
             --exclude='.github' \
             --exclude='storage/logs/*' \
+            --exclude='*.tar.gz' \
             .
+          # Mover de volta para o diretório atual
+          mv ../app.tar.gz .
+          echo "✅ Artifact criado com sucesso"
+          ls -lh app.tar.gz
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
