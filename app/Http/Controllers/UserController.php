@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreUserRequest;
+use App\Http\Requests\UpdateUserRequest;
 use App\Models\User;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\Rule;
 
 class UserController extends Controller
 {
@@ -16,6 +16,7 @@ class UserController extends Controller
     public function index()
     {
         $users = User::select('id', 'name', 'email', 'document', 'type', 'balance')
+            ->orderBy('id')
             ->get();
 
         return response()->json([
@@ -26,18 +27,14 @@ class UserController extends Controller
     /**
      * POST /api/users
      * Criar novo usuário
+     * 
+     * @param StoreUserRequest $request Validação automática via Form Request
      */
-    public function store(Request $request)
+    public function store(StoreUserRequest $request)
     {
         try {
-            $validated = $request->validate([
-                'name' => 'required|string|max:255',
-                'email' => 'required|email|unique:users,email',
-                'document' => 'required|string|unique:users,document',
-                'password' => 'required|string|min:6',
-                'type' => ['required', Rule::in([User::TYPE_COMMON, User::TYPE_MERCHANT])],
-                'balance' => 'nullable|numeric|min:0',
-            ]);
+            // Dados já validados pelo StoreUserRequest
+            $validated = $request->validated();
 
             $user = User::create([
                 'name' => $validated['name'],
@@ -53,15 +50,10 @@ class UserController extends Controller
                 'data' => $user->only('id', 'name', 'email', 'document', 'type', 'balance')
             ], 201);
 
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json([
-                'message' => 'Validation error',
-                'errors' => $e->errors(),
-            ], 422);
-
         } catch (\Exception $e) {
             return response()->json([
-                'message' => $e->getMessage(),
+                'message' => 'Error creating user',
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -87,23 +79,20 @@ class UserController extends Controller
     }
 
     /**
-     * PUT /api/users/{id}
+     * PUT/PATCH /api/users/{id}
      * Atualizar um usuário
+     * 
+     * @param UpdateUserRequest $request Validação automática via Form Request
      */
-    public function update(Request $request, int $id)
+    public function update(UpdateUserRequest $request, int $id)
     {
         try {
             $user = User::findOrFail($id);
 
-            $validated = $request->validate([
-                'name' => 'sometimes|string|max:255',
-                'email' => ['sometimes', 'email', Rule::unique('users')->ignore($user->id)],
-                'document' => ['sometimes', 'string', Rule::unique('users')->ignore($user->id)],
-                'password' => 'sometimes|string|min:6',
-                'type' => ['sometimes', Rule::in([User::TYPE_COMMON, User::TYPE_MERCHANT])],
-                'balance' => 'sometimes|numeric|min:0',
-            ]);
+            // Dados já validados pelo UpdateUserRequest
+            $validated = $request->validated();
 
+            // Hash da senha se fornecida
             if (isset($validated['password'])) {
                 $validated['password'] = Hash::make($validated['password']);
             }
@@ -119,12 +108,11 @@ class UserController extends Controller
             return response()->json([
                 'message' => 'User not found',
             ], 404);
-
-        } catch (\Illuminate\Validation\ValidationException $e) {
+        } catch (\Exception $e) {
             return response()->json([
-                'message' => 'Validation error',
-                'errors' => $e->errors(),
-            ], 422);
+                'message' => 'Error updating user',
+                'error' => $e->getMessage(),
+            ], 500);
         }
     }
 
@@ -136,16 +124,23 @@ class UserController extends Controller
     {
         try {
             $user = User::findOrFail($id);
+            $userName = $user->name;
+            
             $user->delete();
 
             return response()->json([
-                'message' => 'User deleted successfully',
+                'message' => "User '{$userName}' deleted successfully",
             ]);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
                 'message' => 'User not found',
             ], 404);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error deleting user',
+                'error' => $e->getMessage(),
+            ], 500);
         }
     }
 }

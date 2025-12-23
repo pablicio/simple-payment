@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\TransferRequest;
 use App\Services\TransferService;
-use Illuminate\Http\Request;
 
 class TransferController extends Controller
 {
@@ -17,22 +17,16 @@ class TransferController extends Controller
     /**
      * POST /api/transfer
      * 
-     * Body esperado:
-     * {
-     *   "value": 100.00,
-     *   "payer": 1,
-     *   "payee": 2
-     * }
+     * Realizar transferência entre usuários
+     * 
+     * @param TransferRequest $request Validação automática via Form Request
+     * @return \Illuminate\Http\JsonResponse
      */
-    public function transfer(Request $request)
+    public function transfer(TransferRequest $request)
     {
         try {
-            // Validar request
-            $validated = $request->validate([
-                'value' => 'required|numeric|min:0.01',
-                'payer' => 'required|integer|exists:users,id',
-                'payee' => 'required|integer|exists:users,id',
-            ]);
+            // Os dados já vêm validados pelo TransferRequest
+            $validated = $request->validated();
 
             // Executar transferência
             $transaction = $this->transferService->transfer(
@@ -41,24 +35,26 @@ class TransferController extends Controller
                 amount: (float) $validated['value']
             );
 
-            // Retornar sucesso
+            // Retornar sucesso com dados da transação
             return response()->json([
                 'message' => 'Transfer completed successfully',
                 'data' => [
                     'transaction_id' => $transaction->id,
-                    'payer' => $transaction->payer->only('id', 'name', 'balance'),
-                    'payee' => $transaction->payee->only('id', 'name', 'balance'),
-                    'amount' => $transaction->amount,
+                    'payer' => [
+                        'id' => $transaction->payer->id,
+                        'name' => $transaction->payer->name,
+                        'balance' => $transaction->payer->balance,
+                    ],
+                    'payee' => [
+                        'id' => $transaction->payee->id,
+                        'name' => $transaction->payee->name,
+                        'balance' => $transaction->payee->balance,
+                    ],
+                    'value' => $transaction->value,
                     'status' => $transaction->status,
-                    'created_at' => $transaction->created_at,
+                    'created_at' => $transaction->created_at->toIso8601String(),
                 ]
             ], 201);
-
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json([
-                'message' => 'Validation error',
-                'errors' => $e->errors(),
-            ], 422);
 
         } catch (\Exception $e) {
             return response()->json([
