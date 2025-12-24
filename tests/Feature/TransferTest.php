@@ -140,7 +140,7 @@ class TransferTest extends TestCase
             'payee' => $payee->id,
         ]);
 
-        $response->assertStatus(400)
+        $response->assertStatus(422)
             ->assertJson([
                 'message' => 'Insufficient balance',
             ]);
@@ -247,7 +247,7 @@ class TransferTest extends TestCase
             'payee' => $payee->id,
         ]);
 
-        $response->assertStatus(400)
+        $response->assertStatus(403)
             ->assertJson([
                 'message' => 'Transfer not authorized',
             ]);

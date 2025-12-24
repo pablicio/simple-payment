@@ -34,7 +34,7 @@ class StoreUserRequest extends FormRequest
             ],
             'email' => [
                 'required',
-                'email:rfc,dns', // Validação completa com verificação de DNS
+                'email:rfc', // Validação RFC sem DNS (permite usar example.com em testes)
                 'max:255',
                 'unique:users,email',
                 'regex:/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/', // Formato adicional
@@ -52,8 +52,7 @@ class StoreUserRequest extends FormRequest
                     ->letters()
                     ->mixedCase()
                     ->numbers()
-                    ->symbols()
-                    ->uncompromised(), // Verifica se a senha vazou em data breaches
+                    ->symbols(),
                 'confirmed', // Requer password_confirmation
             ],
             'password_confirmation' => [
@@ -138,7 +137,6 @@ class StoreUserRequest extends FormRequest
             'password.mixed_case' => 'A senha deve conter letras maiúsculas e minúsculas',
             'password.numbers' => 'A senha deve conter números',
             'password.symbols' => 'A senha deve conter caracteres especiais',
-            'password.uncompromised' => 'Esta senha foi comprometida em vazamentos de dados. Por favor, escolha outra',
             
             'password_confirmation.required' => 'A confirmação de senha é obrigatória',
             

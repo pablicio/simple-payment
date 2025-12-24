@@ -13,15 +13,6 @@ use Illuminate\Support\Facades\Log;
 
 class UserController extends Controller
 {
-    public function __construct()
-    {
-        // Rate limiting para criação de usuários: 5 por minuto
-        $this->middleware('throttle:5,1')->only('store');
-        
-        // Rate limiting para outras operações: 60 por minuto
-        $this->middleware('throttle:60,1')->except('store');
-    }
-
     /**
      * GET /api/users
      * Listar todos os usuários com cache

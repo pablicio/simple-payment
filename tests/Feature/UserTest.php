@@ -17,7 +17,8 @@ class UserTest extends TestCase
             'name' => 'João Silva',
             'email' => 'joao@example.com',
             'document' => '12345678901',
-            'password' => 'senha123',
+            'password' => 'Senha@123',
+            'password_confirmation' => 'Senha@123',
             'type' => 'common',
             'balance' => 1000,
         ]);
@@ -47,7 +48,8 @@ class UserTest extends TestCase
             'name' => 'Loja ABC',
             'email' => 'loja@example.com',
             'document' => '12345678000199',
-            'password' => 'senha123',
+            'password' => 'Senha@123',
+            'password_confirmation' => 'Senha@123',
             'type' => 'merchant',
             'balance' => 5000,
         ]);
@@ -77,7 +79,8 @@ class UserTest extends TestCase
             'name' => 'João Silva',
             'email' => 'invalid-email',
             'document' => '12345678901',
-            'password' => 'senha123',
+            'password' => 'Senha@123',
+            'password_confirmation' => 'Senha@123',
             'type' => 'common',
         ]);
 
@@ -94,7 +97,8 @@ class UserTest extends TestCase
             'name' => 'João Silva',
             'email' => 'joao@example.com',
             'document' => '12345678901',
-            'password' => 'senha123',
+            'password' => 'Senha@123',
+            'password_confirmation' => 'Senha@123',
             'type' => 'common',
         ]);
 
@@ -111,7 +115,8 @@ class UserTest extends TestCase
             'name' => 'João Silva',
             'email' => 'joao@example.com',
             'document' => '12345678901',
-            'password' => 'senha123',
+            'password' => 'Senha@123',
+            'password_confirmation' => 'Senha@123',
             'type' => 'common',
         ]);
 
@@ -127,6 +132,7 @@ class UserTest extends TestCase
             'email' => 'joao@example.com',
             'document' => '12345678901',
             'password' => '123',
+            'password_confirmation' => '123',
             'type' => 'common',
         ]);
 
@@ -141,7 +147,8 @@ class UserTest extends TestCase
             'name' => 'João Silva',
             'email' => 'joao@example.com',
             'document' => '12345678901',
-            'password' => 'senha123',
+            'password' => 'Senha@123',
+            'password_confirmation' => 'Senha@123',
             'type' => 'invalid_type',
         ]);
 
@@ -156,14 +163,16 @@ class UserTest extends TestCase
             'name' => 'João Silva',
             'email' => 'joao@example.com',
             'document' => '12345678901',
-            'password' => 'senha123',
+            'password' => 'Senha@123',
+            'password_confirmation' => 'Senha@123',
             'type' => 'common',
         ]);
 
         $user = User::where('email', 'joao@example.com')->first();
         
-        $this->assertNotEquals('senha123', $user->password);
-        $this->assertTrue(password_verify('senha123', $user->password));
+        $this->assertNotNull($user);
+        $this->assertNotEquals('Senha@123', $user->password);
+        $this->assertTrue(password_verify('Senha@123', $user->password));
     }
 
     /** @test */
@@ -173,10 +182,12 @@ class UserTest extends TestCase
             'name' => 'João Silva',
             'email' => 'joao@example.com',
             'document' => '12345678901',
-            'password' => 'senha123',
+            'password' => 'Senha@123',
+            'password_confirmation' => 'Senha@123',
             'type' => 'common',
         ]);
 
+        $response->assertStatus(201);
         $this->assertEquals('0.00', $response->json('data.balance'));
     }
 }
