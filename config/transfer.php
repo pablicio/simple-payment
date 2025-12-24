@@ -22,4 +22,19 @@ return [
     */
     'authorizer_url' => env('TRANSFER_AUTHORIZER_URL', 'https://util.devi.tools/api/v2/authorize'),
     'notifier_url' => env('TRANSFER_NOTIFIER_URL', 'https://util.devi.tools/api/v1/notify'),
-];
+
+    /*
+    |--------------------------------------------------------------------------
+    | SSL Verification
+    |--------------------------------------------------------------------------
+    |
+    | Desabilite a verificação SSL APENAS em desenvolvimento.
+    | NUNCA desabilite em produção por questões de segurança.
+    |
+    | Isso resolve o erro "cURL error 60: SSL certificate problem"
+    | comum em ambientes Windows de desenvolvimento.
+    |
+    */
+    'notifier_verify_ssl' => env('TRANSFER_NOTIFIER_VERIFY_SSL', true),
+    'authorizer_verify_ssl' => env('TRANSFER_AUTHORIZER_VERIFY_SSL', true),
+    ];

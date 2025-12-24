@@ -6,9 +6,17 @@ use App\Models\User;
 use App\Models\Transaction;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class TransferService
 {
+    protected NotificationService $notificationService;
+
+    public function __construct(NotificationService $notificationService)
+    {
+        $this->notificationService = $notificationService;
+    }
     /**
      * Executar transferência entre usuários
      */
@@ -43,8 +51,19 @@ class TransferService
             // 6. Marcar como completa
             $transaction->markAsCompleted();
             
-            // 7. Notificar (não bloqueia se falhar)
-            $this->notifyPayee($payee, $payer, $amount);
+            // 7. Invalidar cache após transferência bem-sucedida
+            $this->invalidateCache($payerId, $payeeId, $transaction->id);
+            
+            // 8. Notificar de forma assíncrona (não bloqueia - usa queue)
+            try {
+                $this->notificationService->notifyTransferReceived($transaction);
+            } catch (\Exception $e) {
+                // Log mas não quebra a transferência
+                Log::warning('Failed to queue notification', [
+                    'transaction_id' => $transaction->id,
+                    'error' => $e->getMessage()
+                ]);
+            }
             
             return $transaction->load('payer', 'payee');
         });
@@ -83,16 +102,24 @@ class TransferService
     {
         // Modo de teste: sempre autoriza se configurado
         if (config('transfer.authorizer_mock', false)) {
-            \Log::info('Transfer authorized by mock');
+            Log::info('Transfer authorized by mock');
             return true;
         }
 
         try {
-            $response = Http::timeout(5)->get(config('transfer.authorizer_url'));
+            // Configurar HTTP client
+            $client = Http::timeout(5);
+            
+            // Desabilitar verificação SSL em desenvolvimento se configurado
+            if (config('transfer.authorizer_verify_ssl', true) === false) {
+                $client = $client->withOptions(['verify' => false]);
+            }
+            
+            $response = $client->get(config('transfer.authorizer_url'));
             
             // Verifica se a resposta foi bem sucedida (status 2xx)
             if (!$response->successful()) {
-                \Log::warning('Authorizer returned non-successful status', [
+                Log::warning('Authorizer returned non-successful status', [
                     'status' => $response->status()
                 ]);
                 return false;
@@ -111,7 +138,7 @@ class TransferService
                 $authorized = true; // Se não tem status/message, autoriza
             }
             
-            \Log::info('Authorizer response', [
+            Log::info('Authorizer response', [
                 'data' => $data,
                 'authorized' => $authorized
             ]);
@@ -119,7 +146,7 @@ class TransferService
             return $authorized;
             
         } catch (\Exception $e) {
-            \Log::warning('Authorizer service failed', [
+            Log::warning('Authorizer service failed', [
                 'error' => $e->getMessage(),
                 'fallback' => 'denying'
             ]);
@@ -130,21 +157,32 @@ class TransferService
     }
 
     /**
-     * Notificar o recebedor (assíncrono, não bloqueia)
+     * Invalidar cache após transferência
+     * 
+     * Limpa cache de:
+     * - Usuários envolvidos
+     * - Saldos dos usuários
+     * - Transações
+     * - Estatísticas
      */
-    private function notifyPayee(User $payee, User $payer, float $amount): void
+    private function invalidateCache(int $payerId, int $payeeId, int $transactionId): void
     {
-        try {
-            Http::timeout(3)->post(config('transfer.notifier_url'), [
-                'email' => $payee->email,
-                'message' => "Você recebeu R$ {$amount} de {$payer->name}",
-            ]);
-        } catch (\Exception $e) {
-            // Log mas não quebra a transferência
-            \Log::warning('Notification failed', [
-                'payee_id' => $payee->id,
-                'error' => $e->getMessage()
-            ]);
-        }
+        // Cache de usuários
+        Cache::forget("user:{$payerId}");
+        Cache::forget("user:{$payeeId}");
+        Cache::forget("user:{$payerId}:balance");
+        Cache::forget("user:{$payeeId}:balance");
+        Cache::forget('users:all');
+
+        // Cache de transações
+        Cache::forget("transaction:{$transactionId}");
+        Cache::forget("transaction:user:{$payerId}:stats");
+        Cache::forget("transaction:user:{$payeeId}:stats");
+        
+        // Nota: Cache das listagens de transações expira naturalmente (TTL de 5 minutos)
+        // Para invalidação imediata de todas as listagens, seria necessário:
+        // 1. Usar Redis/Memcached (que suportam tags)
+        // 2. Rastrear manualmente todas as chaves de listagem
+        // 3. Usar um prefixo de versão global
     }
 }
