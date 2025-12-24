@@ -126,7 +126,7 @@ APP_URL=http://localhost:8000
 DB_CONNECTION=mysql
 DB_HOST=db
 DB_PORT=3306
-DB_DATABASE=picpay_simplificado
+DB_DATABASE=ayment_simplificado
 DB_USERNAME=root
 DB_PASSWORD=secret
 ```
@@ -210,7 +210,7 @@ docker-compose exec app php artisan db:seed
 docker-compose exec app php artisan migrate:fresh --seed
 
 # Conectar ao MySQL
-docker-compose exec db mysql -uroot -psecret picpay_simplificado
+docker-compose exec db mysql -uroot -psecret ayment_simplificado
 ```
 
 ---
@@ -403,10 +403,10 @@ docker-compose exec app php artisan make:migration nome
 docker-compose exec db mysql -uroot -psecret
 
 # Backup
-docker-compose exec db mysqldump -uroot -psecret picpay_simplificado > backup.sql
+docker-compose exec db mysqldump -uroot -psecret ayment_simplificado > backup.sql
 
 # Restore
-docker-compose exec -T db mysql -uroot -psecret picpay_simplificado < backup.sql
+docker-compose exec -T db mysql -uroot -psecret ayment_simplificado < backup.sql
 ```
 
 ### Limpar Tudo
@@ -444,7 +444,7 @@ alias composer='docker-compose exec app composer'
 alias phpunit='docker-compose exec app php artisan test'
 
 # Database
-alias mysql='docker-compose exec db mysql -uroot -psecret picpay_simplificado'
+alias mysql='docker-compose exec db mysql -uroot -psecret ayment_simplificado'
 ```
 
 Uso:

@@ -86,16 +86,16 @@ ps: ## Ver status dos containers
 	docker-compose ps
 
 mysql: ## Conectar ao MySQL
-	docker-compose exec db mysql -uroot -psecret picpay_simplificado
+	docker-compose exec db mysql -uroot -psecret payment_simplificado
 
 backup: ## Backup do banco
 	@echo "$(BLUE)Criando backup...$(NC)"
-	docker-compose exec db mysqldump -uroot -psecret picpay_simplificado > backup_$(shell date +%Y%m%d_%H%M%S).sql
+	docker-compose exec db mysqldump -uroot -psecret payment_simplificado > backup_$(shell date +%Y%m%d_%H%M%S).sql
 	@echo "$(GREEN)✅ Backup criado!$(NC)"
 
 restore: ## Restaurar backup (use: make restore FILE=backup.sql)
 	@echo "$(BLUE)Restaurando backup...$(NC)"
-	docker-compose exec -T db mysql -uroot -psecret picpay_simplificado < $(FILE)
+	docker-compose exec -T db mysql -uroot -psecret payment_simplificado < $(FILE)
 	@echo "$(GREEN)✅ Backup restaurado!$(NC)"
 
 tinker: ## Abrir Laravel Tinker

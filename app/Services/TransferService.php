@@ -17,110 +17,229 @@ class TransferService
     {
         $this->notificationService = $notificationService;
     }
+
     /**
      * Executar transferência entre usuários
      */
     public function transfer(int $payerId, int $payeeId, float $amount): Transaction
     {
-        return DB::transaction(function () use ($payerId, $payeeId, $amount) {
-            
-            // 1. Buscar usuários com lock pessimista
-            $payer = User::lockForUpdate()->findOrFail($payerId);
-            $payee = User::lockForUpdate()->findOrFail($payeeId);
-            
-            // 2. Validar regras de negócio
-            $this->validateTransfer($payer, $payee, $amount);
-            
-            // 3. Consultar autorizador externo
-            if (!$this->authorize()) {
-                throw new \Exception('Transfer not authorized');
-            }
-            
-            // 4. Criar transação com status pending
-            $transaction = Transaction::create([
-                'payer_id' => $payer->id,
-                'payee_id' => $payee->id,
-                'value' => $amount,
-                'status' => Transaction::STATUS_PENDING,
-            ]);
-            
-            // 5. Executar transferência
-            $payer->decrement('balance', $amount);
-            $payee->increment('balance', $amount);
-            
-            // 6. Marcar como completa
-            $transaction->markAsCompleted();
-            
-            // 7. Invalidar cache após transferência bem-sucedida
-            $this->invalidateCache($payerId, $payeeId, $transaction->id);
-            
-            // 8. Notificar de forma assíncrona (não bloqueia - usa queue)
-            try {
-                $this->notificationService->notifyTransferReceived($transaction);
-            } catch (\Exception $e) {
-                // Log mas não quebra a transferência
-                Log::warning('Failed to queue notification', [
-                    'transaction_id' => $transaction->id,
-                    'error' => $e->getMessage()
+        $startTime = microtime(true);
+        $requestId = request()->header('X-Request-ID', \Illuminate\Support\Str::uuid());
+        
+        // Log estruturado de início
+        Log::info('Transfer initiated', [
+            'request_id' => $requestId,
+            'payer_id' => $payerId,
+            'payee_id' => $payeeId,
+            'amount' => $amount,
+            'ip' => request()->ip(),
+            'user_agent' => request()->userAgent(),
+        ]);
+
+        try {
+            $transaction = DB::transaction(function () use ($payerId, $payeeId, $amount, $requestId) {
+                
+                // 1. Buscar usuários com lock pessimista
+                $payer = User::lockForUpdate()->findOrFail($payerId);
+                $payee = User::lockForUpdate()->findOrFail($payeeId);
+                
+                Log::debug('Users locked for update', [
+                    'request_id' => $requestId,
+                    'payer_id' => $payer->id,
+                    'payee_id' => $payee->id,
                 ]);
-            }
+                
+                // 2. Validar regras de negócio
+                $this->validateTransfer($payer, $payee, $amount, $requestId);
+                
+                Log::info('Transfer validation passed', [
+                    'request_id' => $requestId,
+                    'payer_balance' => $payer->balance,
+                ]);
+                
+                // 3. Consultar autorizador externo
+                $authStartTime = microtime(true);
+                if (!$this->authorize($requestId)) {
+                    throw new \Exception('Transfer not authorized');
+                }
+                $authDuration = (microtime(true) - $authStartTime) * 1000;
+                
+                Log::info('External authorizer approved', [
+                    'request_id' => $requestId,
+                    'duration_ms' => round($authDuration, 2),
+                ]);
+                
+                // 4. Criar transação com status pending
+                $transaction = Transaction::create([
+                    'payer_id' => $payer->id,
+                    'payee_id' => $payee->id,
+                    'value' => $amount,
+                    'status' => Transaction::STATUS_PENDING,
+                ]);
+                
+                // 5. Executar transferência
+                $payer->decrement('balance', $amount);
+                $payee->increment('balance', $amount);
+                
+                Log::info('Balances updated', [
+                    'request_id' => $requestId,
+                    'transaction_id' => $transaction->id,
+                    'payer_new_balance' => $payer->fresh()->balance,
+                    'payee_new_balance' => $payee->fresh()->balance,
+                ]);
+                
+                // 6. Marcar como completa
+                $transaction->markAsCompleted();
+                
+                // 7. Invalidar cache após transferência bem-sucedida
+                $this->invalidateCache($payerId, $payeeId, $transaction->id);
+                
+                // 8. Notificar de forma assíncrona (não bloqueia - usa queue)
+                try {
+                    $this->notificationService->notifyTransferReceived($transaction);
+                    
+                    Log::info('Notification dispatched', [
+                        'request_id' => $requestId,
+                        'transaction_id' => $transaction->id,
+                    ]);
+                } catch (\Exception $e) {
+                    // Log mas não quebra a transferência
+                    Log::warning('Failed to queue notification', [
+                        'request_id' => $requestId,
+                        'transaction_id' => $transaction->id,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+                
+                return $transaction->load('payer', 'payee');
+            });
+
+            $duration = (microtime(true) - $startTime) * 1000;
             
-            return $transaction->load('payer', 'payee');
-        });
+            // Log de sucesso com métricas
+            Log::info('Transfer completed successfully', [
+                'request_id' => $requestId,
+                'transaction_id' => $transaction->id,
+                'duration_ms' => round($duration, 2),
+                'cache_invalidated' => true,
+            ]);
+
+            return $transaction;
+
+        } catch (\Exception $e) {
+            $duration = (microtime(true) - $startTime) * 1000;
+            
+            // Log estruturado de erro
+            Log::error('Transfer failed', [
+                'request_id' => $requestId,
+                'payer_id' => $payerId,
+                'payee_id' => $payeeId,
+                'amount' => $amount,
+                'error' => $e->getMessage(),
+                'error_type' => get_class($e),
+                'duration_ms' => round($duration, 2),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            throw $e;
+        }
     }
 
     /**
      * Validar regras de negócio da transferência
      */
-    private function validateTransfer(User $payer, User $payee, float $amount): void
+    private function validateTransfer(User $payer, User $payee, float $amount, string $requestId): void
     {
         // Lojista não pode enviar
         if ($payer->isMerchant()) {
+            Log::warning('Merchant attempted to send transfer', [
+                'request_id' => $requestId,
+                'payer_id' => $payer->id,
+            ]);
             throw new \Exception('Merchants cannot send transfers');
         }
         
         // Não pode transferir para si mesmo
         if ($payer->id === $payee->id) {
+            Log::warning('Self-transfer attempted', [
+                'request_id' => $requestId,
+                'user_id' => $payer->id,
+            ]);
             throw new \Exception('Cannot transfer to yourself');
         }
         
         // Valor deve ser positivo
         if ($amount <= 0) {
+            Log::warning('Invalid transfer amount', [
+                'request_id' => $requestId,
+                'amount' => $amount,
+            ]);
             throw new \Exception('Amount must be greater than zero');
         }
         
         // Verificar saldo suficiente
         if (!$payer->hasSufficientBalance($amount)) {
+            Log::warning('Insufficient balance', [
+                'request_id' => $requestId,
+                'payer_id' => $payer->id,
+                'required_amount' => $amount,
+                'current_balance' => $payer->balance,
+            ]);
             throw new \Exception('Insufficient balance');
+        }
+
+        // Detectar valores suspeitos (acima de 10.000)
+        if ($amount > 10000) {
+            Log::alert('High value transfer detected', [
+                'request_id' => $requestId,
+                'payer_id' => $payer->id,
+                'payee_id' => $payee->id,
+                'amount' => $amount,
+                'ip' => request()->ip(),
+            ]);
         }
     }
 
     /**
      * Consultar serviço autorizador externo
      */
-    private function authorize(): bool
+    private function authorize(string $requestId): bool
     {
         // Modo de teste: sempre autoriza se configurado
         if (config('transfer.authorizer_mock', false)) {
-            Log::info('Transfer authorized by mock');
+            Log::info('Transfer authorized by mock', [
+                'request_id' => $requestId,
+            ]);
             return true;
         }
 
+        $authorizerUrl = config('transfer.authorizer_url');
+        
+        Log::info('Authorizer request sent', [
+            'request_id' => $requestId,
+            'url' => $authorizerUrl,
+        ]);
+
         try {
-            // Configurar HTTP client
-            $client = Http::timeout(5);
+            // Configurar HTTP client com timeout e retry
+            $client = Http::timeout(5)
+                ->retry(2, 100); // 2 tentativas com 100ms entre elas
             
             // Desabilitar verificação SSL em desenvolvimento se configurado
             if (config('transfer.authorizer_verify_ssl', true) === false) {
                 $client = $client->withOptions(['verify' => false]);
             }
             
-            $response = $client->get(config('transfer.authorizer_url'));
+            $startTime = microtime(true);
+            $response = $client->get($authorizerUrl);
+            $responseTime = (microtime(true) - $startTime) * 1000;
             
             // Verifica se a resposta foi bem sucedida (status 2xx)
             if (!$response->successful()) {
                 Log::warning('Authorizer returned non-successful status', [
-                    'status' => $response->status()
+                    'request_id' => $requestId,
+                    'status' => $response->status(),
+                    'response_time_ms' => round($responseTime, 2),
                 ]);
                 return false;
             }
@@ -138,16 +257,20 @@ class TransferService
                 $authorized = true; // Se não tem status/message, autoriza
             }
             
-            Log::info('Authorizer response', [
-                'data' => $data,
-                'authorized' => $authorized
+            Log::info('Authorizer response received', [
+                'request_id' => $requestId,
+                'authorized' => $authorized,
+                'response_time_ms' => round($responseTime, 2),
+                'status_code' => $response->status(),
             ]);
             
             return $authorized;
             
         } catch (\Exception $e) {
-            Log::warning('Authorizer service failed', [
+            Log::error('Authorizer service failed', [
+                'request_id' => $requestId,
                 'error' => $e->getMessage(),
+                'error_type' => get_class($e),
                 'fallback' => 'denying'
             ]);
             
@@ -167,22 +290,39 @@ class TransferService
      */
     private function invalidateCache(int $payerId, int $payeeId, int $transactionId): void
     {
+        $invalidatedKeys = [];
+
         // Cache de usuários
-        Cache::forget("user:{$payerId}");
-        Cache::forget("user:{$payeeId}");
-        Cache::forget("user:{$payerId}:balance");
-        Cache::forget("user:{$payeeId}:balance");
-        Cache::forget('users:all');
+        $userKeys = [
+            "user:{$payerId}",
+            "user:{$payeeId}",
+            "user:{$payerId}:balance",
+            "user:{$payeeId}:balance",
+            'users:all'
+        ];
+
+        foreach ($userKeys as $key) {
+            if (Cache::forget($key)) {
+                $invalidatedKeys[] = $key;
+            }
+        }
 
         // Cache de transações
-        Cache::forget("transaction:{$transactionId}");
-        Cache::forget("transaction:user:{$payerId}:stats");
-        Cache::forget("transaction:user:{$payeeId}:stats");
+        $transactionKeys = [
+            "transaction:{$transactionId}",
+            "transaction:user:{$payerId}:stats",
+            "transaction:user:{$payeeId}:stats",
+        ];
+
+        foreach ($transactionKeys as $key) {
+            if (Cache::forget($key)) {
+                $invalidatedKeys[] = $key;
+            }
+        }
         
-        // Nota: Cache das listagens de transações expira naturalmente (TTL de 5 minutos)
-        // Para invalidação imediata de todas as listagens, seria necessário:
-        // 1. Usar Redis/Memcached (que suportam tags)
-        // 2. Rastrear manualmente todas as chaves de listagem
-        // 3. Usar um prefixo de versão global
+        Log::debug('Cache invalidated', [
+            'keys' => $invalidatedKeys,
+            'count' => count($invalidatedKeys),
+        ]);
     }
 }

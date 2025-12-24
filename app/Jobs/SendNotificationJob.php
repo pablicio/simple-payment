@@ -42,14 +42,22 @@ class SendNotificationJob implements ShouldQueue
      */
     public function handle(): void
     {
-        Log::info('Sending notification', [
+        $startTime = microtime(true);
+        $attemptNumber = $this->notification->attempts + 1;
+
+        Log::info('Notification job started', [
             'notification_id' => $this->notification->id,
-            'attempt' => $this->notification->attempts + 1,
+            'transaction_id' => $this->notification->transaction_id,
+            'user_id' => $this->notification->user_id,
+            'attempt' => $attemptNumber,
+            'max_attempts' => $this->tries,
         ]);
 
         try {
             // Enviar notificação via API externa
             $response = $this->sendToExternalApi();
+
+            $duration = (microtime(true) - $startTime) * 1000;
 
             // Marcar como enviada
             $this->notification->markAsSent(
@@ -58,10 +66,14 @@ class SendNotificationJob implements ShouldQueue
 
             Log::info('Notification sent successfully', [
                 'notification_id' => $this->notification->id,
+                'transaction_id' => $this->notification->transaction_id,
+                'attempt' => $attemptNumber,
+                'duration_ms' => round($duration, 2),
             ]);
 
         } catch (\Exception $e) {
-            $this->handleFailure($e);
+            $duration = (microtime(true) - $startTime) * 1000;
+            $this->handleFailure($e, $duration);
         }
     }
 
@@ -78,6 +90,12 @@ class SendNotificationJob implements ShouldQueue
             'message' => $this->notification->message,
         ];
 
+        Log::debug('Sending notification to external API', [
+            'notification_id' => $this->notification->id,
+            'url' => $url,
+            'payload' => $payload,
+        ]);
+
         // Configurar HTTP client
         $client = Http::timeout(10)
             ->retry(2, 1000); // 2 tentativas com 1 segundo de intervalo
@@ -87,8 +105,18 @@ class SendNotificationJob implements ShouldQueue
             $client = $client->withOptions(['verify' => false]);
         }
 
+        $startTime = microtime(true);
+
         // Fazer requisição POST
         $response = $client->post($url, $payload);
+
+        $responseTime = (microtime(true) - $startTime) * 1000;
+
+        Log::debug('External API response received', [
+            'notification_id' => $this->notification->id,
+            'status_code' => $response->status(),
+            'response_time_ms' => round($responseTime, 2),
+        ]);
 
         // Verificar se foi bem-sucedido
         if (!$response->successful()) {
@@ -104,21 +132,30 @@ class SendNotificationJob implements ShouldQueue
     /**
      * Tratar falha no envio
      */
-    private function handleFailure(\Exception $e): void
+    private function handleFailure(\Exception $e, float $duration): void
     {
         $errorMessage = $e->getMessage();
+        $attemptNumber = $this->attempts();
         
         // Verificar se é a última tentativa
-        $isFinalAttempt = $this->attempts() >= $this->tries;
+        $isFinalAttempt = $attemptNumber >= $this->tries;
 
         // Registrar falha
         $this->notification->markAsFailed($errorMessage, $isFinalAttempt);
 
-        Log::warning('Notification failed', [
+        $logLevel = $isFinalAttempt ? 'error' : 'warning';
+
+        Log::log($logLevel, 'Notification sending failed', [
             'notification_id' => $this->notification->id,
-            'attempt' => $this->attempts(),
+            'transaction_id' => $this->notification->transaction_id,
+            'user_id' => $this->notification->user_id,
+            'attempt' => $attemptNumber,
+            'max_attempts' => $this->tries,
             'final_attempt' => $isFinalAttempt,
             'error' => $errorMessage,
+            'error_type' => get_class($e),
+            'duration_ms' => round($duration, 2),
+            'next_retry_in_seconds' => !$isFinalAttempt ? $this->backoff[$attemptNumber - 1] ?? 0 : null,
         ]);
 
         // Se não é a última tentativa, lançar exceção para retry
@@ -134,7 +171,12 @@ class SendNotificationJob implements ShouldQueue
     {
         Log::error('Notification job failed permanently', [
             'notification_id' => $this->notification->id,
+            'transaction_id' => $this->notification->transaction_id,
+            'user_id' => $this->notification->user_id,
             'error' => $exception->getMessage(),
+            'error_type' => get_class($exception),
+            'total_attempts' => $this->tries,
+            'trace' => $exception->getTraceAsString(),
         ]);
 
         // Marcar como falha definitiva se ainda não foi
